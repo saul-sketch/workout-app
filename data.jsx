@@ -1,5 +1,10 @@
 // data.jsx — state + persistence + seed data (v3: Saúl Lozano real program active)
 const STORAGE_KEY = 'workout_app_v3';
+
+// ─── Remote sync config ─────────────────────────────────
+// URL secreta: no la compartas. Cambiar el userKey borra tu data remota.
+const API_URL = 'https://api-production-d8553.up.railway.app';
+const USER_KEY = 'saul_5YvyFA5od7HgK33nRkuHOMqrZlDLcwgkEHeV5q2s';
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const DAYS_FULL = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
@@ -347,6 +352,43 @@ function saveData(data) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
 }
 
+// ─── Remote sync (API) ──────────────────────────────────
+async function fetchRemote() {
+  try {
+    const r = await fetch(`${API_URL}/data/${USER_KEY}`, { method: 'GET' });
+    if (r.status === 404) return { data: null }; // no remote yet
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function pushRemote(data) {
+  try {
+    const r = await fetch(`${API_URL}/data/${USER_KEY}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data }),
+    });
+    return r.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+let _pushTimer = null;
+let _lastCallback = null;
+function pushRemoteDebounced(data, cb) {
+  if (_pushTimer) clearTimeout(_pushTimer);
+  _lastCallback = cb;
+  _pushTimer = setTimeout(async () => {
+    const ok = await pushRemote(data);
+    if (_lastCallback) _lastCallback(ok);
+    _pushTimer = null;
+  }, 800);
+}
+
 function activeProgram(data) {
   return data.programs.find(p => p.id === data.activeProgramId) || data.programs[0];
 }
@@ -424,4 +466,5 @@ Object.assign(window, {
   todayIdx, dateForDayIdx, lastSession, personalRecord,
   formatDate, formatDateShort, newId, today,
   programStatus, programProgress, programWeek, iso,
+  fetchRemote, pushRemote, pushRemoteDebounced,
 });

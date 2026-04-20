@@ -115,7 +115,7 @@ function Sheet({ open, onClose, title, children, fullHeight }) {
   if (!open) return null;
   return (
     <div style={{
-      position: 'absolute', inset: 0, zIndex: 100,
+      position: 'fixed', inset: 0, zIndex: 200,
       display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
     }}>
       <div onClick={onClose} style={{
@@ -127,8 +127,9 @@ function Sheet({ open, onClose, title, children, fullHeight }) {
         position: 'relative',
         background: 'var(--bg1)',
         borderTopLeftRadius: 28, borderTopRightRadius: 28,
-        maxHeight: fullHeight ? '92%' : '80%',
-        minHeight: fullHeight ? '92%' : undefined,
+        maxHeight: fullHeight ? '92vh' : '80vh',
+        minHeight: fullHeight ? '92vh' : undefined,
+        maxWidth: 560, width: '100%', margin: '0 auto',
         transform: visible ? 'translateY(0)' : 'translateY(100%)',
         transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)',
         display: 'flex', flexDirection: 'column',
@@ -165,10 +166,10 @@ function TabBar({ tab, setTab }) {
   ];
   return (
     <div style={{
-      position: 'absolute', bottom: 0, left: 0, right: 0,
+      position: 'fixed', bottom: 0, left: 0, right: 0,
       background: 'var(--bg1)',
       borderTop: '1px solid var(--border)',
-      paddingTop: 8, paddingBottom: 28,
+      paddingTop: 8, paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
       display: 'flex', justifyContent: 'space-around',
       zIndex: 10,
     }}>
@@ -207,4 +208,39 @@ function StatusBar() {
   );
 }
 
-Object.assign(window, { Icon, BigButton, Stepper, Sheet, TabBar, StatusBar });
+// ─── Sync indicator (bottom-right floating dot) ─────────
+function SyncIndicator({ status }) {
+  if (status === 'idle') return null;
+  const cfg = {
+    syncing: { color: '#f59e0b', label: 'Sincronizando…', pulse: true },
+    synced:  { color: '#10b981', label: 'Guardado', pulse: false },
+    offline: { color: '#9ca3af', label: 'Offline (local)', pulse: false },
+  }[status] || { color: '#9ca3af', label: status };
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (status === 'synced') { setExpanded(true); const t = setTimeout(() => setExpanded(false), 1400); return () => clearTimeout(t); }
+    if (status === 'syncing' || status === 'offline') setExpanded(true);
+  }, [status]);
+  return (
+    <div style={{
+      position: 'fixed', right: 12, top: 'calc(12px + env(safe-area-inset-top))', zIndex: 120,
+      display: 'flex', alignItems: 'center', gap: 6,
+      background: 'var(--bg1)', border: '1px solid var(--border)',
+      borderRadius: 100, padding: expanded ? '6px 12px 6px 10px' : '6px',
+      fontSize: 11, fontWeight: 700, color: 'var(--fg-dim)',
+      transition: 'padding 0.25s',
+      pointerEvents: 'none',
+      boxShadow: '0 2px 8px -2px rgba(0,0,0,0.12)',
+    }}>
+      <span style={{
+        width: 8, height: 8, borderRadius: 4, background: cfg.color,
+        animation: cfg.pulse ? 'wa-pulse 1.1s ease-in-out infinite' : 'none',
+        flexShrink: 0,
+      }}/>
+      {expanded && <span style={{ whiteSpace: 'nowrap' }}>{cfg.label}</span>}
+      <style>{`@keyframes wa-pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }`}</style>
+    </div>
+  );
+}
+
+Object.assign(window, { Icon, BigButton, Stepper, Sheet, TabBar, StatusBar, SyncIndicator });

@@ -28,7 +28,7 @@ function RestTimer({ seconds, onClose, defaultSeconds }) {
 
   return (
     <div style={{
-      position: 'absolute', left: 16, right: 16, bottom: 90, zIndex: 80,
+      position: 'fixed', left: 'max(16px, calc(50% - 280px))', right: 'max(16px, calc(50% - 280px))', bottom: 'calc(90px + env(safe-area-inset-bottom))', zIndex: 80,
       background: 'var(--fg)', color: 'var(--bg0)',
       borderRadius: 24, padding: 16,
       display: 'flex', alignItems: 'center', gap: 14,
@@ -164,7 +164,29 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 
 function App() {
   const [data, setDataState] = useSa(() => loadData());
-  const setData = (d) => { setDataState(d); saveData(d); };
+  const [syncStatus, setSyncStatus] = useSa('idle'); // idle | syncing | synced | offline
+  const setData = (d) => {
+    setDataState(d);
+    saveData(d);
+    setSyncStatus('syncing');
+    pushRemoteDebounced(d, (ok) => setSyncStatus(ok ? 'synced' : 'offline'));
+  };
+
+  // Initial remote pull: if server has valid data, replace local
+  useEa(() => {
+    fetchRemote().then(remote => {
+      const isValid = remote && remote.data && Array.isArray(remote.data.programs) && remote.data.programs.length > 0;
+      if (isValid) {
+        setDataState(remote.data);
+        saveData(remote.data);
+        setSyncStatus('synced');
+      } else {
+        // No valid remote yet: push local (seed or cache) to establish it
+        pushRemote(data).then(ok => setSyncStatus(ok ? 'synced' : 'offline'));
+      }
+    }).catch(() => setSyncStatus('offline'));
+    // eslint-disable-next-line
+  }, []);
 
   const [tab, setTab] = useSa(() => localStorage.getItem('wa_tab') || 'week');
   useEa(() => localStorage.setItem('wa_tab', tab), [tab]);
@@ -233,60 +255,38 @@ function App() {
 
   return (
     <>
-      {/* Phone frame container */}
       <div style={{
-        minHeight: '100vh', display: 'flex',
-        alignItems: 'center', justifyContent: 'center',
-        padding: 20, boxSizing: 'border-box',
-        background: 'radial-gradient(ellipse at top, #f5f2ed 0%, #e8e4dc 70%, #ddd9d0 100%)',
+        minHeight: '100vh',
+        ...cssVars,
+        background: cssVars['--bg0'],
+        color: cssVars['--fg'],
+        fontFamily: "Inter, -apple-system, system-ui, sans-serif",
+        WebkitFontSmoothing: 'antialiased',
       }}>
         <div style={{
-          width: 390, height: 820, maxHeight: '95vh',
-          borderRadius: 48, overflow: 'hidden', position: 'relative',
-          background: cssVars['--bg0'],
-          boxShadow: '0 30px 70px -20px rgba(0,0,0,0.3), 0 0 0 10px #111, 0 0 0 11px #222',
-          ...cssVars,
-          color: cssVars['--fg'],
-          fontFamily: "Inter, -apple-system, system-ui, sans-serif",
-          WebkitFontSmoothing: 'antialiased',
+          maxWidth: 560, margin: '0 auto',
+          minHeight: '100vh', position: 'relative',
+          paddingBottom: 'calc(90px + env(safe-area-inset-bottom))',
+          paddingTop: 'env(safe-area-inset-top)',
         }}>
-          {/* Dynamic island */}
-          <div style={{
-            position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
-            width: 110, height: 30, borderRadius: 20, background: '#000', zIndex: 100,
-          }} />
-          <StatusBar />
-
-          <div style={{ height: 'calc(100% - 44px)', overflow: 'auto', position: 'relative' }}>
-            {workoutDay !== null ? (
-              <WorkoutScreen
-                data={data}
-                setData={setData}
-                dayIdx={workoutDay}
-                onBack={() => setWorkoutDay(null)}
-                openTimer={(s) => setTimerSeconds(s)}
-              />
-            ) : (
-              <>
-                {tab === 'week' && <WeekScreen data={data} setData={setData} goToWorkout={setWorkoutDay} editDay={setEditingDay} goToPrograms={() => { setTab('more'); setMoreView('programs'); }}/>}
-                {tab === 'extras' && <ExtrasScreen data={data} setData={setData} />}
-                {tab === 'diet' && <DietScreen data={data} setData={setData} />}
-                {tab === 'peptides' && <PeptidesScreen data={data} setData={setData} />}
-                {tab === 'more' && (
-                  <MoreScreen view={moreView} setView={setMoreView} data={data} setData={setData} openEditProgram={setEditingProgram}/>
-                )}
-              </>
-            )}
-          </div>
-
-          {workoutDay === null && <TabBar tab={tab} setTab={setTab} />}
-
-          {timerSeconds !== null && (
-            <RestTimer
-              seconds={timerSeconds}
-              defaultSeconds={data.settings.restSeconds}
-              onClose={() => setTimerSeconds(null)}
+          {workoutDay !== null ? (
+            <WorkoutScreen
+              data={data}
+              setData={setData}
+              dayIdx={workoutDay}
+              onBack={() => setWorkoutDay(null)}
+              openTimer={(s) => setTimerSeconds(s)}
             />
+          ) : (
+            <>
+              {tab === 'week' && <WeekScreen data={data} setData={setData} goToWorkout={setWorkoutDay} editDay={setEditingDay} goToPrograms={() => { setTab('more'); setMoreView('programs'); }}/>}
+              {tab === 'extras' && <ExtrasScreen data={data} setData={setData} />}
+              {tab === 'diet' && <DietScreen data={data} setData={setData} />}
+              {tab === 'peptides' && <PeptidesScreen data={data} setData={setData} />}
+              {tab === 'more' && (
+                <MoreScreen view={moreView} setView={setMoreView} data={data} setData={setData} openEditProgram={setEditingProgram}/>
+              )}
+            </>
           )}
 
           {editingDay !== null && (
@@ -305,6 +305,18 @@ function App() {
             />
           )}
         </div>
+
+        {workoutDay === null && <TabBar tab={tab} setTab={setTab} />}
+
+        {timerSeconds !== null && (
+          <RestTimer
+            seconds={timerSeconds}
+            defaultSeconds={data.settings.restSeconds}
+            onClose={() => setTimerSeconds(null)}
+          />
+        )}
+
+        <SyncIndicator status={syncStatus} />
       </div>
 
       {tweaksOpen && (
